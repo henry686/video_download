@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 # Ensure UTF-8 encoding on all platforms, especially Windows
 # where the default GBK codec can't handle Unicode video titles.
-# Must be set before any yt-dlp output to avoid UnicodeEncodeError.
+# Must run before any yt-dlp output to avoid UnicodeEncodeError.
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 for stream in (sys.stdout, sys.stderr):
     if hasattr(stream, "reconfigure"):
@@ -23,11 +26,58 @@ for stream in (sys.stdout, sys.stderr):
         except Exception:
             pass
 
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+import yt_dlp  # noqa: E402  # encoding setup must run before yt-dlp import
 
-import yt_dlp
+
+def _find_ffmpeg() -> str | None:
+    """Auto-detect FFmpeg executable location.
+
+    Searches common install paths (especially on Windows where FFmpeg
+    is often not on PATH). Returns the path if found, None otherwise.
+    """
+    import subprocess
+
+    # 1. Already in PATH — cheapest check
+    try:
+        subprocess.run(
+            ["ffmpeg", "-version"],
+            capture_output=True,
+            timeout=5,
+        )
+        return "ffmpeg"  # found in PATH, no explicit path needed
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # 2. Search common install directories
+    candidates: list[Path] = []
+    if sys.platform == "win32":
+        # winget (Gyan.FFmpeg)
+        prog = os.environ.get("ProgramFiles", "C:\\Program Files")
+        local_appdata = os.environ.get("LOCALAPPDATA", "")
+        candidates = [
+            Path(prog) / "AIGO" / "ffmpeg.exe",
+            Path(prog) / "ffmpeg" / "bin" / "ffmpeg.exe",
+            Path(prog).parent / "Program Files (x86)" / "ffmpeg" / "bin" / "ffmpeg.exe",
+        ]
+        if local_appdata:
+            # WinGet package directory
+            for d in Path(local_appdata, "Microsoft", "WinGet", "Packages").glob(
+                "Gyan.FFmpeg_*"
+            ):
+                exe = d / "ffmpeg.exe"
+                candidates.append(exe)
+    else:
+        candidates = [
+            Path("/usr/bin/ffmpeg"),
+            Path("/usr/local/bin/ffmpeg"),
+            Path("/opt/homebrew/bin/ffmpeg"),
+        ]
+
+    for path in candidates:
+        if path.is_file():
+            return str(path)
+
+    return None
 
 
 class VideoDownloader:
@@ -44,6 +94,7 @@ class VideoDownloader:
         cookiefile: str | None = None,
         proxy: str | None = None,
         quiet: bool = False,
+        ffmpeg_path: str | None = None,
     ):
         """Initialize the downloader.
 
@@ -52,12 +103,14 @@ class VideoDownloader:
             cookiefile: Path to Netscape-format cookie file for authentication.
             proxy: Proxy URL (e.g. "socks5://127.0.0.1:1080" or "http://127.0.0.1:8080").
             quiet: Suppress yt-dlp output.
+            ffmpeg_path: Path to ffmpeg executable. Auto-detected if not provided.
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.cookiefile = cookiefile
         self.proxy = proxy
         self.quiet = quiet
+        self._ffmpeg_path: str | None = ffmpeg_path or _find_ffmpeg()
 
     def _build_options(
         self,
@@ -86,6 +139,9 @@ class VideoDownloader:
 
         if self.proxy:
             opts["proxy"] = self.proxy
+
+        if self._ffmpeg_path:
+            opts["ffmpeg_location"] = self._ffmpeg_path
 
         opts.update(extra)
         return opts

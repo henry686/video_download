@@ -25,11 +25,13 @@ video_download/
 ├── CLAUDE.md                     # This file
 ├── README.md                     # Project description
 ├── pyproject.toml                # Project config & dependencies
+├── VideoDownloader.spec          # PyInstaller spec — builds standalone .exe
 ├── .gitignore
 ├── src/
 │   └── video_download/
 │       ├── __init__.py           # Package init, exports VideoDownloader
 │       ├── core.py               # VideoDownloader class (yt-dlp wrapper)
+│       ├── gui.py                # Tkinter GUI for desktop use
 │       └── platforms/
 │           ├── __init__.py
 │           └── bilibili.py       # Bilibili-specific: danmaku, API info
@@ -43,9 +45,11 @@ video_download/
 ## Architecture
 
 ```
-[CLI / API / GUI]     ← future
+[GUI (Tkinter)]        ← gui.py — cross-platform desktop GUI
        │
-[VideoDownloader]     ← core.py — thin orchestrator over yt-dlp
+[CLI / API]            ← future
+       │
+[VideoDownloader]      ← core.py — thin orchestrator over yt-dlp
        │
 [yt-dlp YoutubeDL]    ← extraction + download engine (1800+ sites)
        │
@@ -94,6 +98,13 @@ ruff check src/
 
 # Run examples
 python examples/basic_download.py
+
+# Launch the desktop GUI
+python -m video_download.gui
+# or:
+python -c "from video_download import launch_gui; launch_gui()"
+# or (after pip install):
+video-download-gui
 
 # Verify package import
 python -c "import video_download; print(video_download.__version__)"
@@ -159,6 +170,21 @@ ass_content = danmaku_to_ass(danmakus)
 | `bv*[height<=720]+ba/best` | 720p video + best audio |
 | `bestaudio/best` | Audio only (best quality) |
 | `worst` | Smallest file |
+
+## Packaging (standalone .exe)
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build single-file executable (~37 MB)
+pyinstaller VideoDownloader.spec
+# Output: dist/VideoDownloader.exe
+```
+
+The `.exe` bundles Python 3.14 + yt-dlp + bilibili-api + Tkinter GUI.  
+FFmpeg is NOT bundled — users need `winget install Gyan.FFmpeg` (one-time).  
+The app auto-detects FFmpeg via `_find_ffmpeg()` in core.py.
 
 ## Adding New Platform Support
 

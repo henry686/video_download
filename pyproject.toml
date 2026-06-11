@@ -32,6 +32,12 @@ dev = [
     "ruff>=0.5.0",
 ]
 
+[project.scripts]
+video-download = "video_download:launch_gui"
+
+[project.gui-scripts]
+video-download-gui = "video_download:launch_gui"
+
 [project.urls]
 Homepage = "https://github.com/henry686/video_download"
 Repository = "https://github.com/henry686/video_download.git"
