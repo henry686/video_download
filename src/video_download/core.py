@@ -32,40 +32,60 @@ import yt_dlp  # noqa: E402  # encoding setup must run before yt-dlp import
 def _find_ffmpeg() -> str | None:
     """Auto-detect FFmpeg executable location.
 
-    Searches common install paths (especially on Windows where FFmpeg
-    is often not on PATH). Returns the path if found, None otherwise.
+    Searches PATH and common install locations (especially on Windows
+    where FFmpeg is often installed but not visible in the current
+    process environment). Returns the path if found, None otherwise.
     """
+    import shutil
     import subprocess
 
-    # 1. Already in PATH — cheapest check
+    # 1. shutil.which — searches PATH directly, more reliable than subprocess
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        return ffmpeg
+
+    # 2. subprocess fallback — catches cases where shutil.which misses
     try:
         subprocess.run(
             ["ffmpeg", "-version"],
             capture_output=True,
             timeout=5,
         )
-        return "ffmpeg"  # found in PATH, no explicit path needed
+        return "ffmpeg"
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    # 2. Search common install directories
+    # 3. Search common install directories
     candidates: list[Path] = []
     if sys.platform == "win32":
-        # winget (Gyan.FFmpeg)
         prog = os.environ.get("ProgramFiles", "C:\\Program Files")
         local_appdata = os.environ.get("LOCALAPPDATA", "")
+
         candidates = [
+            # winget (Gyan.FFmpeg) system-wide install
             Path(prog) / "AIGO" / "ffmpeg.exe",
+            # manual install / extracted zip
             Path(prog) / "ffmpeg" / "bin" / "ffmpeg.exe",
+            # x86 fallback
             Path(prog).parent / "Program Files (x86)" / "ffmpeg" / "bin" / "ffmpeg.exe",
         ]
+
         if local_appdata:
-            # WinGet package directory
+            # winget per-user install — shim directory (added to PATH on install)
+            candidates.append(
+                Path(local_appdata) / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe"
+            )
+            # winget per-user install — actual package directory
             for d in Path(local_appdata, "Microsoft", "WinGet", "Packages").glob(
                 "Gyan.FFmpeg_*"
             ):
                 exe = d / "ffmpeg.exe"
-                candidates.append(exe)
+                if exe not in candidates:
+                    candidates.append(exe)
+            # scoop install
+            scoop = Path(os.environ.get("USERPROFILE", "")) / "scoop" / "shims" / "ffmpeg.exe"
+            if scoop not in candidates:
+                candidates.append(scoop)
     else:
         candidates = [
             Path("/usr/bin/ffmpeg"),

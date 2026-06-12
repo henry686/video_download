@@ -6,6 +6,8 @@ without using the command line.
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -13,6 +15,38 @@ from tkinter import filedialog, messagebox, ttk
 
 from video_download import VideoDownloader
 from video_download.core import _find_ffmpeg
+
+# ------------------------------------------------------------------
+# Persistent settings (survive app restarts)
+# ------------------------------------------------------------------
+
+
+def _config_path() -> Path:
+    """Path to the JSON config file (in user's app data directory)."""
+    base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    return Path(base) / "VideoDownloader" / "config.json"
+
+
+def _load_config() -> dict:
+    """Load saved settings from disk. Returns empty dict if not found."""
+    try:
+        cfg_file = _config_path()
+        if cfg_file.is_file():
+            return json.loads(cfg_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {}
+
+
+def _save_config(config: dict) -> None:
+    """Persist settings to disk."""
+    try:
+        cfg_file = _config_path()
+        cfg_file.parent.mkdir(parents=True, exist_ok=True)
+        cfg_file.write_text(json.dumps(config, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+    except OSError:
+        pass  # non-critical — silently ignore write failures
 
 # Common format presets shown in the dropdown
 FORMAT_PRESETS: dict[str, str] = {
@@ -38,8 +72,13 @@ class DownloaderGUI(tk.Tk):
 
         self._downloader: VideoDownloader | None = None
         self._downloading = False
+        self._config = _load_config()
 
         self._build_ui()
+        self._load_persisted_values()
+
+        # Save settings when window is closed
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -62,7 +101,8 @@ class DownloaderGUI(tk.Tk):
         dir_frame = ttk.Frame(self)
         dir_frame.pack(fill=tk.X, padx=12, pady=4)
         ttk.Label(dir_frame, text="保存目录:").pack(side=tk.LEFT)
-        self.dir_var = tk.StringVar(value=str(Path.cwd() / "downloads"))
+        saved_dir = self._config.get("output_dir", "")
+        self.dir_var = tk.StringVar(value=saved_dir or str(Path.cwd() / "downloads"))
         self.dir_entry = ttk.Entry(dir_frame, textvariable=self.dir_var)
         self.dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0))
         ttk.Button(dir_frame, text="浏览...", command=self._browse_dir, width=8).pack(
@@ -92,6 +132,7 @@ class DownloaderGUI(tk.Tk):
                 self.audio_only_var.set(True)
             else:
                 self.audio_only_var.set(False)
+            self._save_settings()
 
         self.fmt_var.trace_add("write", _on_fmt_changed)
         self.audio_cb = ttk.Checkbutton(
@@ -164,6 +205,31 @@ class DownloaderGUI(tk.Tk):
         self.log_text.config(yscrollcommand=scrollbar.set)
 
     # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def _load_persisted_values(self) -> None:
+        """Restore saved values from the config file."""
+        cookie = self._config.get("cookie_file", "")
+        if cookie:
+            self.cookie_var.set(cookie)
+        fmt = self._config.get("format", "")
+        if fmt and fmt in FORMAT_PRESETS:
+            self.fmt_var.set(fmt)
+
+    def _save_settings(self) -> None:
+        """Persist current UI values to disk."""
+        self._config["output_dir"] = self.dir_var.get().strip()
+        self._config["cookie_file"] = self.cookie_var.get().strip()
+        self._config["format"] = self.fmt_var.get()
+        _save_config(self._config)
+
+    def _on_close(self) -> None:
+        """Save settings and close the window."""
+        self._save_settings()
+        self.destroy()
+
+    # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
 
@@ -171,6 +237,7 @@ class DownloaderGUI(tk.Tk):
         path = filedialog.askdirectory(title="选择下载保存目录")
         if path:
             self.dir_var.set(path)
+            self._save_settings()
 
     def _browse_cookie(self) -> None:
         path = filedialog.askopenfilename(
@@ -178,6 +245,7 @@ class DownloaderGUI(tk.Tk):
         )
         if path:
             self.cookie_var.set(path)
+            self._save_settings()
 
     def _on_audio_check(self) -> None:
         """When audio-only is toggled via checkbox, sync the format dropdown."""
