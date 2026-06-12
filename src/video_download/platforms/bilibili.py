@@ -4,11 +4,46 @@ Provides:
 - Danmaku (bullet comment) extraction and ASS subtitle generation
 - Bilibili video metadata enrichment
 - Quality presets optimized for Bilibili (Dolby Vision, HDR, 8K, etc.)
+- Anti-bot WBI patch for yt-dlp (dm_img_* parameters on playback API)
 """
 
 from __future__ import annotations
 
+import base64
+import random
+import string
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Anti-bot patch: yt-dlp's BiliBili extractor misses dm_img_* parameters on
+# the playback API (wbi/playurl), causing HTTP 412 errors since ~2025-06.
+# This monkey-patch adds the missing fingerpint params before yt-dlp signs
+# the WBI request.  Remove this block once yt-dlp upstream includes the fix.
+# ---------------------------------------------------------------------------
+try:
+    from yt_dlp.extractor.bilibili import BiliBiliIE
+
+    _orig_download_playinfo = BiliBiliIE._download_playinfo
+
+    def _patched_download_playinfo(self, bvid, cid, headers=None, query=None):
+        dm = {
+            "dm_img_list": "[]",
+            "dm_img_str": base64.b64encode(
+                "".join(random.choices(string.printable, k=random.randint(16, 64))).encode()
+            )[:-2].decode(),
+            "dm_cover_img_str": base64.b64encode(
+                "".join(random.choices(string.printable, k=random.randint(32, 128))).encode()
+            )[:-2].decode(),
+            "dm_img_inter": '{"ds":[],"wh":[6093,6631,31],"of":[430,760,380]}',
+        }
+        query = {**(query or {}), **dm}
+        return _orig_download_playinfo(self, bvid, cid, headers=headers, query=query)
+
+    BiliBiliIE._download_playinfo = _patched_download_playinfo
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
 
 from bilibili_api import sync
 from bilibili_api.video import Video

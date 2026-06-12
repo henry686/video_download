@@ -185,7 +185,7 @@ class VideoDownloader:
         Returns:
             info_dict with title, duration, formats, thumbnail, etc.
         """
-        options = self._build_options(format="best", download=False)
+        options = self._build_options(format="bestvideo+bestaudio/best", download=False)
         return self._run(url, options, download=False)
 
     def list_formats(self, url: str) -> list[dict]:
@@ -203,7 +203,7 @@ class VideoDownloader:
     def download(
         self,
         url: str,
-        format: str = "best",
+        format: str = "bestvideo+bestaudio/best",
         output_template: str | None = None,
         progress_callback: Callable[[dict], None] | None = None,
         audio_only: bool = False,
