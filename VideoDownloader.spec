@@ -13,13 +13,14 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 # -- Collect yt-dlp and bilibili-api with all their dynamic imports --
 yt_dlp_datas, yt_dlp_binaries, yt_dlp_hiddenimports = collect_all("yt_dlp")
 bili_datas, bili_binaries, bili_hiddenimports = collect_all("bilibili_api")
+curl_datas, curl_binaries, curl_hiddenimports = collect_all("curl_cffi")
 
 hiddenimports = [
     # yt-dlp runtime
     *yt_dlp_hiddenimports,
     # bilibili-api + its TLS backend
     *bili_hiddenimports,
-    "curl_cffi",
+    *curl_hiddenimports,
     # Standard library modules that PyInstaller may miss
     "urllib.parse", "html.parser", "xml.etree.ElementTree", "json",
     "http.cookiejar", "netrc",
@@ -32,10 +33,11 @@ package_path = src_path / "video_download"
 a = Analysis(
     [str(package_path / "gui.py")],
     pathex=[str(src_path)],
-    binaries=yt_dlp_binaries + bili_binaries,
+    binaries=yt_dlp_binaries + bili_binaries + curl_binaries,
     datas=[
         *yt_dlp_datas,
         *bili_datas,
+        *curl_datas,
     ],
     hiddenimports=hiddenimports,
     hookspath=[],

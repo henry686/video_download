@@ -12,6 +12,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from video_download import VideoDownloader
+from video_download.core import _find_ffmpeg
 
 # Common format presets shown in the dropdown
 FORMAT_PRESETS: dict[str, str] = {
@@ -205,6 +206,22 @@ class DownloaderGUI(tk.Tk):
         if not output_dir:
             messagebox.showwarning("提示", "请选择保存目录")
             return
+
+        # Check FFmpeg availability (required for merging video+audio)
+        ffmpeg_path = _find_ffmpeg()
+        if not ffmpeg_path:
+            self._log("⚠ 未检测到 FFmpeg，高清视频下载将失败")
+            self._log("  请运行: winget install Gyan.FFmpeg")
+            messagebox.showwarning(
+                "缺少 FFmpeg",
+                "未检测到 FFmpeg！\n\n"
+                "下载高清视频需要 FFmpeg 来合并视频和音频。\n\n"
+                "请打开命令行运行以下命令安装（只需一次）：\n"
+                "  winget install Gyan.FFmpeg\n\n"
+                "安装完成后重新启动本程序即可。",
+            )
+        else:
+            self._log(f"FFmpeg: {ffmpeg_path}")
 
         self._downloading = True
         self._set_ui_state(downloading=True)
